@@ -58,7 +58,7 @@ packages:
     source: hosted
     version: "2.1.2"
   camera:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: camera
       sha256: d6ec2cbdbe2fa8f5e0d07d8c06368fe4effa985a4a5ddade9cc58a8cd849557d
@@ -486,7 +486,7 @@ packages:
     source: hosted
     version: "0.9.0"
   google_mlkit_face_detection:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: google_mlkit_face_detection
       sha256: "65988405c884fd84a4ccc8bded7b5e3e4c33362f6f4eaaa94818bdaaba7bab7d"

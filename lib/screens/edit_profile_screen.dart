@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import '../services/crypto_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   static const String routeName = '/edit_profile';
-  
+
   final Map<String, dynamic> user;
 
   const EditProfileScreen({super.key, required this.user});
@@ -14,7 +15,8 @@ class EditProfileScreen extends StatefulWidget {
   State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen> with SingleTickerProviderStateMixin {
+class _EditProfileScreenState extends State<EditProfileScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _firstNameController;
   late TextEditingController _lastNameController;
@@ -31,8 +33,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
-    _firstNameController = TextEditingController(text: widget.user['firstName'] ?? '');
-    _lastNameController = TextEditingController(text: widget.user['lastName'] ?? '');
+    _firstNameController = TextEditingController(
+      text: widget.user['firstName'] ?? '',
+    );
+    _lastNameController = TextEditingController(
+      text: widget.user['lastName'] ?? '',
+    );
     _emailController = TextEditingController(text: widget.user['email'] ?? '');
     _profilePicturePath = widget.user['profilePicture'];
 
@@ -45,7 +51,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.2),
+      end: Offset.zero,
+    ).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
 
@@ -63,7 +72,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
   }
 
   Future<void> _pickImage() async {
-    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+    );
     if (pickedFile != null) {
       setState(() {
         _profilePicturePath = pickedFile.path;
@@ -84,7 +95,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
         'profilePicture': _profilePicturePath,
       };
       if (_passwordController.text.isNotEmpty) {
-        updateData['password'] = _passwordController.text;
+        updateData['password'] = await CryptoService.hashPassword(
+          _passwordController.text,
+        );
       }
       await db.updateUser(widget.user['email'], updateData);
 
@@ -95,9 +108,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Erreur: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -152,8 +165,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
           child: CircleAvatar(
             radius: 60,
             backgroundColor: Colors.white.withValues(alpha: 0.2),
-            backgroundImage: _profilePicturePath != null ? FileImage(File(_profilePicturePath!)) : null,
-            child: _profilePicturePath == null ? const Icon(Icons.person, size: 60, color: Colors.white) : null,
+            backgroundImage:
+                _profilePicturePath != null
+                    ? FileImage(File(_profilePicturePath!))
+                    : null,
+            child:
+                _profilePicturePath == null
+                    ? const Icon(Icons.person, size: 60, color: Colors.white)
+                    : null,
           ),
         ),
         const SizedBox(height: 16),
@@ -176,14 +195,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
           controller: _firstNameController,
           label: 'Prénom',
           icon: Icons.person_outline,
-          validator: (value) => value == null || value.isEmpty ? 'Champ requis' : null,
+          validator:
+              (value) => value == null || value.isEmpty ? 'Champ requis' : null,
         ),
         const SizedBox(height: 20),
         _buildTextFormField(
           controller: _lastNameController,
           label: 'Nom',
           icon: Icons.person,
-          validator: (value) => value == null || value.isEmpty ? 'Champ requis' : null,
+          validator:
+              (value) => value == null || value.isEmpty ? 'Champ requis' : null,
         ),
         const SizedBox(height: 20),
         _buildTextFormField(
@@ -261,12 +282,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> with SingleTicker
           elevation: 4,
           shadowColor: Colors.black.withValues(alpha: 0.3),
         ),
-        child: _isLoading
-            ? const CircularProgressIndicator(color: Colors.white)
-            : const Text(
-                'Enregistrer',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
+        child:
+            _isLoading
+                ? const CircularProgressIndicator(color: Colors.white)
+                : const Text(
+                  'Enregistrer',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
+import '../utils/translate.dart';
 
 class DeclarationForm extends StatefulWidget {
   static const String routeName = '/form';

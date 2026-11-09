@@ -58,12 +58,19 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog>
           ),
         );
       }
-    } catch (e) {
-      developer.log("Erreur lors de l'envoi de l'email: $e", name: 'EmailVerificationDialog');
+    } catch (error, stackTrace) {
+      developer.log(
+        'Erreur lors du renvoi du lien de vérification',
+        name: 'EmailVerificationDialog',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Erreur lors de l\'envoi de l\'email'),
+            content: const Text(
+              'Impossible de renvoyer le lien. Vérifiez votre connexion et réessayez plus tard.',
+            ),
             backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -94,8 +101,27 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog>
           );
         }
       }
-    } catch (e) {
-      developer.log("Erreur lors de la vérification: $e", name: 'EmailVerificationDialog');
+    } catch (error, stackTrace) {
+      developer.log(
+        'Erreur lors de la vérification email',
+        name: 'EmailVerificationDialog',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Impossible de vérifier l’adresse pour le moment. Vérifiez votre connexion puis réessayez.',
+            ),
+            backgroundColor: Colors.red.shade400,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isChecking = false);
     }
@@ -318,4 +344,4 @@ class _EmailVerificationDialogState extends State<EmailVerificationDialog>
       },
     );
   }
-} 
+}

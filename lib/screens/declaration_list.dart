@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../db/database_helper.dart';
 import 'declaration_form.dart';
+import '../utils/translate.dart';
 
 class DeclarationList extends StatefulWidget {
   static const String routeName = '/list';

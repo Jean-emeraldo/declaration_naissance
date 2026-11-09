@@ -1,16 +1,30 @@
 # declaration_naissance
 
-A new Flutter project.
+Application Flutter de declaration de naissance, avec Firebase et stockage
+SQLite local.
 
-## Getting Started
+## Installation et build Android
 
-This project is a starting point for a Flutter application.
+```sh
+flutter pub get
+flutter build apk
+```
 
-A few resources to get you started if this is your first Flutter project:
+## Confirmation des nouvelles inscriptions
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+L'inscription envoie un email avec les choix **Confirmer** et **Refuser**.
+Le profil local n'est sauvegarde qu'apres confirmation; un refus ou l'expiration
+de la demande supprime le compte Firebase. Ce parcours requiert l'API
+d'approbation, PostgreSQL, SMTP et Firebase Admin. Consultez
+[le guide de configuration](server/otp_api/README.md).
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Apres le deploiement de l'API HTTPS, reconstruisez l'application avec son URL :
+
+```sh
+flutter build apk --dart-define=REGISTRATION_APPROVAL_API_URL=https://api.example.com
+```
+
+Sans URL de service dans l'APK, les inscriptions email echouent explicitement.
+La connexion email en ligne consulte aussi cette API pour ne pas laisser passer
+une demande d'inscription en attente ou refusee; la connexion hors ligne d'un
+compte deja enregistre localement reste disponible.

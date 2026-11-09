@@ -20,7 +20,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final Color _mainColor = const Color(0xFF4CAF9E);
-  final Color _accentColor = const Color(0xFFFF9800);
+  // final Color _accentColor = const Color(0xFFFF9800);
   String _appVersion = '1.0.0';
   bool _isBiometricEnabled = false;
   bool _isNotificationsEnabled = true;

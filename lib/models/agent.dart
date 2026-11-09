@@ -22,26 +22,26 @@ class Agent {
   });
 
   factory Agent.fromMap(Map<String, dynamic> map) => Agent(
-        id: map['id'],
-        email: map['email'],
-        passwordHash: map['passwordHash'],
-        firstName: map['firstName'],
-        lastName: map['lastName'],
-        profilePicture: map['profilePicture'],
-        faceImagePath: map['faceImagePath'],
-        biometricId: map['biometricId'],
-        otpCode: map['otpCode'],
-      );
+    id: map['id'],
+    email: map['email'],
+    passwordHash: map['passwordHash'] ?? map['password'] ?? '',
+    firstName: map['firstName'],
+    lastName: map['lastName'],
+    profilePicture: map['profilePicture'],
+    faceImagePath: map['faceImagePath'],
+    biometricId: map['biometricId'],
+    otpCode: map['otpCode'],
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'email': email,
-        'passwordHash': passwordHash,
-        'firstName': firstName,
-        'lastName': lastName,
-        'profilePicture': profilePicture,
-        'faceImagePath': faceImagePath,
-        'biometricId': biometricId,
-        'otpCode': otpCode,
-      };
+    'id': id,
+    'email': email,
+    'password': passwordHash,
+    'firstName': firstName,
+    'lastName': lastName,
+    'profilePicture': profilePicture,
+    'faceImagePath': faceImagePath,
+    'biometricId': biometricId,
+    'otpCode': otpCode,
+  };
 }

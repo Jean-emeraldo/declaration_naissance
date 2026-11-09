@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:developer' as developer;
+import '../services/crypto_service.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -21,7 +22,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -85,39 +86,83 @@ class DatabaseHelper {
         profilePicture TEXT,
         faceImagePath TEXT,
         biometricId TEXT,
-        otpCode TEXT
+        otpCode TEXT,
+        firebaseUid TEXT,
+        synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 4) {
-      await db.execute('ALTER TABLE declarations ADD COLUMN heureNaissance TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN lieuNaissance TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN dateNaissancePere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN lieuNaissancePere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN professionPere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN nationalitePere TEXT');
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN heureNaissance TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN lieuNaissance TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN dateNaissancePere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN lieuNaissancePere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN professionPere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN nationalitePere TEXT',
+      );
       await db.execute('ALTER TABLE declarations ADD COLUMN adressePere TEXT');
       await db.execute('ALTER TABLE declarations ADD COLUMN pieceIdPere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN dateNaissanceMere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN lieuNaissanceMere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN professionMere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN nationaliteMere TEXT');
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN dateNaissanceMere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN lieuNaissanceMere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN professionMere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN nationaliteMere TEXT',
+      );
       await db.execute('ALTER TABLE declarations ADD COLUMN adresseMere TEXT');
       await db.execute('ALTER TABLE declarations ADD COLUMN pieceIdMere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN nomJeuneFilleMere TEXT');
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN nomJeuneFilleMere TEXT',
+      );
       await db.execute('ALTER TABLE declarations ADD COLUMN nomDeclarant TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN prenomDeclarant TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN adresseDeclarant TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN lienDeclarant TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN pieceIdDeclarant TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN certificatAccouchement TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN livretFamille TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN acteNaissPere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN acteNaissMere TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN acteReconnaissance TEXT');
-      await db.execute('ALTER TABLE declarations ADD COLUMN certificatNationalite TEXT');
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN prenomDeclarant TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN adresseDeclarant TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN lienDeclarant TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN pieceIdDeclarant TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN certificatAccouchement TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN livretFamille TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN acteNaissPere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN acteNaissMere TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN acteReconnaissance TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE declarations ADD COLUMN certificatNationalite TEXT',
+      );
     }
 
     if (oldVersion < 5) {
@@ -131,11 +176,32 @@ class DatabaseHelper {
     if (oldVersion < 7) {
       await db.execute('ALTER TABLE users ADD COLUMN otpCode TEXT');
     }
+
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE users ADD COLUMN firebaseUid TEXT');
+      await db.execute(
+        'ALTER TABLE users ADD COLUMN synced INTEGER NOT NULL DEFAULT 0',
+      );
+      final users = await db.query('users', columns: ['id', 'password']);
+      for (final user in users) {
+        final password = user['password'] as String? ?? '';
+        if (!CryptoService.isPasswordHash(password)) {
+          await db.update(
+            'users',
+            {'password': await CryptoService.hashPassword(password)},
+            where: 'id = ?',
+            whereArgs: [user['id']],
+          );
+        }
+      }
+    }
   }
 
   Future<bool> get isOnline async {
     final connectivityResult = await Connectivity().checkConnectivity();
-    return connectivityResult != ConnectivityResult.none;
+    return connectivityResult.any(
+      (result) => result != ConnectivityResult.none,
+    );
   }
 
   Future<int> insertDeclaration(Map<String, dynamic> data) async {
@@ -147,7 +213,12 @@ class DatabaseHelper {
 
   Future<int> updateDeclaration(int id, Map<String, dynamic> data) async {
     final db = await instance.database;
-    int res = await db.update('declarations', {...data, 'synced': 0}, where: 'id = ?', whereArgs: [id]);
+    int res = await db.update(
+      'declarations',
+      {...data, 'synced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _trySyncDeclaration(id);
     return res;
   }
@@ -155,17 +226,31 @@ class DatabaseHelper {
   Future<void> _trySyncDeclaration(int localId) async {
     if (await isOnline) {
       final db = await instance.database;
-      final List<Map<String, dynamic>> list = await db.query('declarations', where: 'id = ?', whereArgs: [localId]);
+      final List<Map<String, dynamic>> list = await db.query(
+        'declarations',
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
       if (list.isNotEmpty) {
         Map<String, dynamic> decl = list.first;
         try {
           Map<String, dynamic> dataToSync = Map.of(decl);
           dataToSync.remove('id');
           dataToSync.remove('synced');
-          await FirebaseFirestore.instance.collection('declarations').add(dataToSync);
-          await db.update('declarations', {'synced': 1}, where: 'id = ?', whereArgs: [localId]);
+          await FirebaseFirestore.instance
+              .collection('declarations')
+              .add(dataToSync);
+          await db.update(
+            'declarations',
+            {'synced': 1},
+            where: 'id = ?',
+            whereArgs: [localId],
+          );
         } catch (e) {
-          developer.log("Erreur lors de la synchronisation de la déclaration: $e", name: 'DatabaseHelper');
+          developer.log(
+            "Erreur lors de la synchronisation de la déclaration: $e",
+            name: 'DatabaseHelper',
+          );
         }
       }
     }
@@ -174,16 +259,30 @@ class DatabaseHelper {
   Future<void> syncAllLocalDeclarationsToFirestore() async {
     if (await isOnline) {
       final db = await instance.database;
-      final List<Map<String, dynamic>> unsynceds = await db.query('declarations', where: 'synced = ?', whereArgs: [0]);
+      final List<Map<String, dynamic>> unsynceds = await db.query(
+        'declarations',
+        where: 'synced = ?',
+        whereArgs: [0],
+      );
       for (var declaration in unsynceds) {
         try {
           Map<String, dynamic> dataToSync = Map.of(declaration);
           dataToSync.remove('id');
           dataToSync.remove('synced');
-          await FirebaseFirestore.instance.collection('declarations').add(dataToSync);
-          await db.update('declarations', {'synced': 1}, where: 'id = ?', whereArgs: [declaration['id']]);
+          await FirebaseFirestore.instance
+              .collection('declarations')
+              .add(dataToSync);
+          await db.update(
+            'declarations',
+            {'synced': 1},
+            where: 'id = ?',
+            whereArgs: [declaration['id']],
+          );
         } catch (e) {
-          developer.log("Erreur lors de la synchronisation des déclarations: $e", name: 'DatabaseHelper');
+          developer.log(
+            "Erreur lors de la synchronisation des déclarations: $e",
+            name: 'DatabaseHelper',
+          );
         }
       }
     }
@@ -204,7 +303,10 @@ class DatabaseHelper {
     try {
       return await db.insert('users', user);
     } catch (e) {
-      developer.log("Erreur lors de l'insertion de l'utilisateur: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de l'insertion de l'utilisateur: $e",
+        name: 'DatabaseHelper',
+      );
       rethrow;
     }
   }
@@ -220,12 +322,18 @@ class DatabaseHelper {
       if (maps.isNotEmpty) return maps.first;
       return null;
     } catch (e) {
-      developer.log("Erreur lors de la récupération de l'utilisateur par email: $e", name: 'DatabaseHelper');
-      return null;
+      developer.log(
+        "Erreur lors de la récupération de l'utilisateur par email: $e",
+        name: 'DatabaseHelper',
+      );
+      rethrow;
     }
   }
 
-  Future<int> updateUserProfilePicture(String email, String profilePicturePath) async {
+  Future<int> updateUserProfilePicture(
+    String email,
+    String profilePicturePath,
+  ) async {
     try {
       final db = await instance.database;
       return await db.update(
@@ -235,12 +343,18 @@ class DatabaseHelper {
         whereArgs: [email.toLowerCase().trim()],
       );
     } catch (e) {
-      developer.log("Erreur lors de la mise à jour de la photo de profil: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la mise à jour de la photo de profil: $e",
+        name: 'DatabaseHelper',
+      );
       rethrow;
     }
   }
 
-  Future<int> updateUserFaceImagePath(String email, String faceImagePath) async {
+  Future<int> updateUserFaceImagePath(
+    String email,
+    String faceImagePath,
+  ) async {
     try {
       final db = await instance.database;
       return await db.update(
@@ -250,7 +364,10 @@ class DatabaseHelper {
         whereArgs: [email.toLowerCase().trim()],
       );
     } catch (e) {
-      developer.log("Erreur lors de la mise à jour du chemin de l'image faciale: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la mise à jour du chemin de l'image faciale: $e",
+        name: 'DatabaseHelper',
+      );
       rethrow;
     }
   }
@@ -265,7 +382,10 @@ class DatabaseHelper {
         whereArgs: [oldEmail.toLowerCase().trim()],
       );
     } catch (e) {
-      developer.log("Erreur lors de la mise à jour de l'utilisateur: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la mise à jour de l'utilisateur: $e",
+        name: 'DatabaseHelper',
+      );
       rethrow;
     }
   }
@@ -280,7 +400,10 @@ class DatabaseHelper {
         whereArgs: [email.toLowerCase().trim()],
       );
     } catch (e) {
-      developer.log("Erreur lors de la mise à jour de l'ID biométrique: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la mise à jour de l'ID biométrique: $e",
+        name: 'DatabaseHelper',
+      );
       rethrow;
     }
   }
@@ -296,12 +419,17 @@ class DatabaseHelper {
       if (maps.isNotEmpty) return maps.first;
       return null;
     } catch (e) {
-      developer.log("Erreur lors de la récupération de l'utilisateur par ID biométrique: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la récupération de l'utilisateur par ID biométrique: $e",
+        name: 'DatabaseHelper',
+      );
       return null;
     }
   }
 
-  Future<Map<String, dynamic>?> getUserByFaceImagePath(String faceImagePath) async {
+  Future<Map<String, dynamic>?> getUserByFaceImagePath(
+    String faceImagePath,
+  ) async {
     try {
       final db = await instance.database;
       final List<Map<String, dynamic>> maps = await db.query(
@@ -312,7 +440,10 @@ class DatabaseHelper {
       if (maps.isNotEmpty) return maps.first;
       return null;
     } catch (e) {
-      developer.log("Erreur lors de la récupération de l'utilisateur par chemin de l'image faciale: $e", name: 'DatabaseHelper');
+      developer.log(
+        "Erreur lors de la récupération de l'utilisateur par chemin de l'image faciale: $e",
+        name: 'DatabaseHelper',
+      );
       return null;
     }
   }

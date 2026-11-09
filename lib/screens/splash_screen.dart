@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:developer' as developer;
+
 import 'auth_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -13,7 +15,8 @@ class SplashScreen extends StatefulWidget {
 
 enum ConnectionStatus { checking, connected, disconnected, error }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   ConnectionStatus _connectionStatus = ConnectionStatus.checking;
   late AnimationController _controller;
   late Animation<double> _animation;
@@ -21,7 +24,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..forward();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..forward();
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _checkConnection();
   }
@@ -35,21 +41,31 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Future<void> _checkConnection() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
+      final hasConnection = connectivityResult.any(
+        (result) => result != ConnectivityResult.none,
+      );
       if (mounted) {
         setState(() {
-          _connectionStatus = connectivityResult != ConnectivityResult.none ? ConnectionStatus.connected : ConnectionStatus.disconnected;
+          _connectionStatus =
+              hasConnection
+                  ? ConnectionStatus.connected
+                  : ConnectionStatus.disconnected;
         });
       }
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(
-        context,
-        _connectionStatus == ConnectionStatus.connected ? AuthScreen.routeName : '/offline',
+    } catch (error, stackTrace) {
+      developer.log(
+        'Impossible de vérifier la connexion au démarrage',
+        name: 'SplashScreen',
+        error: error,
+        stackTrace: stackTrace,
       );
-    } catch (_) {
       if (mounted) {
         setState(() => _connectionStatus = ConnectionStatus.error);
       }
+    }
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, AuthScreen.routeName);
     }
   }
 
@@ -105,13 +121,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Widget _buildStatusText(BuildContext context) {
     switch (_connectionStatus) {
       case ConnectionStatus.connected:
-        return const Text('Connecté', style: TextStyle(color: Colors.green, fontSize: 12), textAlign: TextAlign.center);
+        return const Text(
+          'Connecté',
+          style: TextStyle(color: Colors.green, fontSize: 12),
+          textAlign: TextAlign.center,
+        );
       case ConnectionStatus.disconnected:
-        return const Text('Mode hors ligne', style: TextStyle(color: Colors.orange, fontSize: 12), textAlign: TextAlign.center);
+        return const Text(
+          'Mode hors ligne',
+          style: TextStyle(color: Colors.orange, fontSize: 12),
+          textAlign: TextAlign.center,
+        );
       case ConnectionStatus.error:
-        return const Text('Erreur de connexion', style: TextStyle(color: Colors.red, fontSize: 12), textAlign: TextAlign.center);
+        return const Text(
+          'Erreur de connexion',
+          style: TextStyle(color: Colors.red, fontSize: 12),
+          textAlign: TextAlign.center,
+        );
       default:
-        return Text('Vérification de la connexion...', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontSize: 12), textAlign: TextAlign.center);
+        return Text(
+          'Vérification de la connexion...',
+          style: TextStyle(
+            color: Theme.of(context).textTheme.bodyMedium?.color,
+            fontSize: 12,
+          ),
+          textAlign: TextAlign.center,
+        );
     }
   }
 }

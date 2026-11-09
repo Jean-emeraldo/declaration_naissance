@@ -6,6 +6,7 @@ import 'declaration_form.dart';
 import 'declaration_list.dart';
 import 'sync_screen.dart';
 import 'edit_profile_screen.dart';
+import '../utils/translate.dart';
 
 class DashboardScreen extends StatefulWidget {
   static const String routeName = '/dashboard';
