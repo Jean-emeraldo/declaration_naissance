@@ -7,9 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../db/database_helper.dart';
 import '../services/crypto_service.dart';
-import '../services/registration_approval_service.dart';
 import '../utils/translate.dart';
-import '../widgets/registration_approval_dialog.dart';
 import '../widgets/email_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -116,9 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     final email = _controllers['email']!.text.trim().toLowerCase();
     final password = _controllers['password']!.text;
     var firebaseAccountCreated = false;
-    var createdThisAttempt = false;
     var localProfileSaved = false;
-    User? firebaseUser;
     try {
       final database = DatabaseHelper.instance;
       final localUser = await database.getUserByEmail(email);
@@ -164,7 +160,6 @@ class _RegisterScreenState extends State<RegisterScreen>
           email: email,
           password: password,
         );
-        createdThisAttempt = true;
       } on FirebaseAuthException catch (error) {
         if (error.code != 'email-already-in-use') rethrow;
         credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -177,44 +172,10 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (user == null) {
         throw StateError('Firebase n’a pas retourné le compte créé.');
       }
-      firebaseUser = user;
       firebaseAccountCreated = true;
 
       if (!user.emailVerified) {
         await user.sendEmailVerification();
-      }
-
-      final approvalStatus = await RegistrationApprovalService()
-          .requestApproval(user);
-      RegistrationApprovalStatus? finalApprovalStatus = approvalStatus;
-      if (approvalStatus == RegistrationApprovalStatus.pending) {
-        if (!mounted) {
-          await _signOutAfterFailure();
-          firebaseAccountCreated = false;
-          return;
-        }
-        finalApprovalStatus = await showDialog<RegistrationApprovalStatus>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => RegistrationApprovalDialog(user: user),
-        );
-      }
-
-      if (finalApprovalStatus != RegistrationApprovalStatus.approved ||
-          !mounted) {
-        await _signOutAfterFailure();
-        firebaseAccountCreated = false;
-        if (mounted &&
-            (finalApprovalStatus == RegistrationApprovalStatus.rejected ||
-                finalApprovalStatus == RegistrationApprovalStatus.expired)) {
-          _snackBar(
-            finalApprovalStatus == RegistrationApprovalStatus.rejected
-                ? 'La demande a été refusée. Le compte a été annulé.'
-                : 'La demande a expiré. Recommencez l’inscription.',
-            Colors.orange,
-          );
-        }
-        return;
       }
 
       if (!mounted) return;
@@ -246,23 +207,6 @@ class _RegisterScreenState extends State<RegisterScreen>
             : message,
         Colors.red.shade400,
       );
-    } on RegistrationApprovalException catch (error) {
-      if (firebaseAccountCreated) {
-        if (createdThisAttempt && firebaseUser != null) {
-          try {
-            await firebaseUser.delete();
-          } catch (deleteError, stackTrace) {
-            developer.log(
-              'Impossible d’annuler le compte après une erreur de confirmation',
-              name: 'RegisterScreen',
-              error: deleteError,
-              stackTrace: stackTrace,
-            );
-          }
-        }
-        await _signOutAfterFailure();
-      }
-      _snackBar(error.message, Colors.red.shade400);
     } catch (e) {
       if (firebaseAccountCreated) {
         await _signOutAfterFailure();

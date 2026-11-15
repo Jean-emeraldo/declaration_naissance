@@ -9,10 +9,8 @@ import 'package:local_auth/local_auth.dart';
 
 import '../db/database_helper.dart';
 import '../services/crypto_service.dart';
-import '../services/registration_approval_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/email_verification_dialog.dart';
-import '../widgets/registration_approval_dialog.dart';
 
 class AuthScreen extends StatefulWidget {
   static const String routeName = '/auth';
@@ -190,6 +188,13 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
           );
           return;
         }
+        if (localUser['emailVerified'] == 0) {
+          _showSnackBar(
+            'Vérifiez votre adresse e-mail avec Internet avant de vous connecter.',
+            Colors.orange,
+          );
+          return;
+        }
         if ((localUser['firebaseUid'] as String?)?.isNotEmpty != true) {
           _showSnackBar(
             'Ce compte local n’est pas encore synchronisé avec Firebase. Connectez-vous avec Internet.',
@@ -212,38 +217,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         throw StateError('Firebase n’a pas retourné le compte connecté.');
       }
 
-      var approvalStatus = await RegistrationApprovalService().getStatus(user);
-      if (approvalStatus == RegistrationApprovalStatus.pending) {
-        if (!mounted) return;
-        approvalStatus =
-            await showDialog<RegistrationApprovalStatus>(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => RegistrationApprovalDialog(user: user),
-            ) ??
-            RegistrationApprovalStatus.pending;
-      }
-
-      if (approvalStatus == RegistrationApprovalStatus.rejected ||
-          approvalStatus == RegistrationApprovalStatus.expired) {
-        await FirebaseAuth.instance.signOut();
-        if (mounted) {
-          _showSnackBar(
-            approvalStatus == RegistrationApprovalStatus.rejected
-                ? 'Cette demande d’inscription a été refusée et annulée.'
-                : 'La demande d’inscription a expiré. Recommencez l’inscription.',
-            Colors.orange,
-          );
-        }
-        return;
-      }
-      if (approvalStatus == RegistrationApprovalStatus.pending) {
-        await FirebaseAuth.instance.signOut();
-        return;
-      }
-
-      if (approvalStatus != RegistrationApprovalStatus.approved &&
-          !user.emailVerified) {
+      if (!user.emailVerified) {
         if (!mounted) return;
         final verified = await showDialog<bool>(
           context: context,
@@ -264,20 +238,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
           _showSnackBar(
             'Votre adresse email n’est pas encore vérifiée. Ouvrez le lien reçu puis réessayez.',
             Colors.orange,
-          );
-          return;
-        }
-      } else if (approvalStatus == RegistrationApprovalStatus.approved) {
-        await user.reload();
-        if (!mounted) {
-          await FirebaseAuth.instance.signOut();
-          return;
-        }
-        if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
-          await FirebaseAuth.instance.signOut();
-          _showSnackBar(
-            'La confirmation de l’adresse n’a pas pu être appliquée. Réessayez.',
-            Colors.red,
           );
           return;
         }
@@ -308,12 +268,20 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
           'lastName': profile['lastName'] ?? '',
           'profilePicture': profile['profilePicture'],
           'firebaseUid': user.uid,
+          'emailVerified': 1,
           'synced': profile.isEmpty ? 0 : 1,
         };
         await database.insertUser(cachedUser);
       } else {
-        cachedUser = {...localUser, 'firebaseUid': user.uid};
-        await database.updateUser(email, {'firebaseUid': user.uid});
+        cachedUser = {
+          ...localUser,
+          'firebaseUid': user.uid,
+          'emailVerified': 1,
+        };
+        await database.updateUser(email, {
+          'firebaseUid': user.uid,
+          'emailVerified': 1,
+        });
       }
 
       if (cachedUser['synced'] != 1) {
@@ -336,9 +304,6 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
       await _storage.write(key: 'user_email', value: user.email);
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/dashboard');
-    } on RegistrationApprovalException catch (error) {
-      await FirebaseAuth.instance.signOut();
-      if (mounted) _showSnackBar(error.message, Colors.red);
     } on FirebaseAuthException catch (e) {
       final message = switch (e.code) {
         'user-not-found' || 'invalid-credential' =>

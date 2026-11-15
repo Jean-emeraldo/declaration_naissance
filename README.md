@@ -10,21 +10,9 @@ flutter pub get
 flutter build apk
 ```
 
-## Confirmation des nouvelles inscriptions
+## Verification des inscriptions
 
-L'inscription envoie un email avec les choix **Confirmer** et **Refuser**.
-Le profil local n'est sauvegarde qu'apres confirmation; un refus ou l'expiration
-de la demande supprime le compte Firebase. Ce parcours requiert l'API
-d'approbation, PostgreSQL, SMTP et Firebase Admin. Consultez
-[le guide de configuration](server/otp_api/README.md).
-
-Apres le deploiement de l'API HTTPS, reconstruisez l'application avec son URL :
-
-```sh
-flutter build apk --dart-define=REGISTRATION_APPROVAL_API_URL=https://api.example.com
-```
-
-Sans URL de service dans l'APK, les inscriptions email echouent explicitement.
-La connexion email en ligne consulte aussi cette API pour ne pas laisser passer
-une demande d'inscription en attente ou refusee; la connexion hors ligne d'un
-compte deja enregistre localement reste disponible.
+L'inscription utilise Firebase Authentication Email/Password et envoie un lien
+de verification avec `sendEmailVerification()`. La connexion e-mail refuse
+l'acces tant que Firebase ne confirme pas l'adresse. Aucune API ni code OTP
+n'est requis par l'application Flutter.
