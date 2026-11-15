@@ -17,11 +17,13 @@ import 'screens/declaration_list.dart';
 import 'screens/sync_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/register_screen.dart';
+import 'services/sync_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await FirebaseAppCheck.instance.activate(androidProvider: AndroidProvider.debug);
+  SyncService().initializeAutoSync();
 
   runApp(
     MultiProvider(

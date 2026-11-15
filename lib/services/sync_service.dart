@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:sqflite/sqflite.dart';
 import 'dart:io';
@@ -8,15 +11,62 @@ import '../db/database_helper.dart';
 import 'dart:developer' as developer;
 
 class SyncService {
+  static bool _autoSyncInitialized = false;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  void initializeAutoSync() {
+    if (_autoSyncInitialized) return;
+    _autoSyncInitialized = true;
+    Connectivity().onConnectivityChanged.listen((results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
+        unawaited(_syncIfVerified());
+      }
+    });
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) unawaited(_syncIfVerified());
+    });
+    unawaited(_syncIfVerified());
+  }
+
+  Future<void> _syncIfVerified() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await user.reload();
+      if (FirebaseAuth.instance.currentUser?.emailVerified != true) return;
+      await syncAllUnsynced();
+    } catch (error, stackTrace) {
+      developer.log(
+        'Synchronisation automatique indisponible',
+        name: 'SyncService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
 
   Future<void> syncDeclarations(List<Naissance> declarations) async {
     final db = await DatabaseHelper.instance.database;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !user.emailVerified) return;
     for (Naissance declaration in declarations) {
       try {
+        final localRows = await db.query(
+          'declarations',
+          columns: ['syncId'],
+          where: 'id = ?',
+          whereArgs: [declaration.id],
+        );
+        if (localRows.isEmpty) continue;
+        final syncId = localRows.first['syncId'] as String?;
+        if (syncId == null || syncId.isEmpty) continue;
         Map<String, dynamic> data = declaration.toMap();
         data.remove('id');
-        await _firestore.collection('declarations').add(data);
+        data['uid'] = user.uid;
+        await _firestore
+            .collection('declarations')
+            .doc('${user.uid}_$syncId')
+            .set(data, SetOptions(merge: true));
         await db.update(
           'declarations',
           {'synced': 1},
@@ -34,7 +84,7 @@ class SyncService {
 
   Future<void> syncUsers(List<Map<String, dynamic>> users) async {
     for (final user in users) {
-      if (user['synced'] == 1) continue;
+      if (user['synced'] == 1 || user['firebaseUid'] == null) continue;
       try {
         await syncUser(user);
       } catch (error, stackTrace) {
@@ -49,6 +99,7 @@ class SyncService {
   }
 
   Future<void> syncUser(Map<String, dynamic> user) async {
+    if (user['emailVerified'] == 0) return;
     final uid = user['firebaseUid'] as String?;
     if (uid == null || uid.isEmpty) {
       throw StateError(

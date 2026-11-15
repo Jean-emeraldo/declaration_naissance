@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -22,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 8,
+      version: 10,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -32,6 +35,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE declarations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        syncId TEXT UNIQUE,
         nom TEXT NOT NULL,
         prenom TEXT,
         dateNaissance TEXT,
@@ -88,6 +92,7 @@ class DatabaseHelper {
         biometricId TEXT,
         otpCode TEXT,
         firebaseUid TEXT,
+        emailVerified INTEGER NOT NULL DEFAULT 1,
         synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
@@ -195,6 +200,30 @@ class DatabaseHelper {
         }
       }
     }
+
+    if (oldVersion < 9) {
+      await db.execute(
+        'ALTER TABLE users ADD COLUMN emailVerified INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+
+    if (oldVersion < 10) {
+      await db.execute('ALTER TABLE declarations ADD COLUMN syncId TEXT');
+      await db.execute(
+        "UPDATE declarations SET syncId = lower(hex(randomblob(16))) WHERE syncId IS NULL",
+      );
+      await db.execute(
+        'CREATE UNIQUE INDEX declarations_sync_id ON declarations(syncId)',
+      );
+    }
+  }
+
+  String _newSyncId() {
+    final random = Random.secure();
+    return List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
   }
 
   Future<bool> get isOnline async {
@@ -206,7 +235,11 @@ class DatabaseHelper {
 
   Future<int> insertDeclaration(Map<String, dynamic> data) async {
     final db = await instance.database;
-    int id = await db.insert('declarations', {...data, 'synced': 0});
+    int id = await db.insert('declarations', {
+      ...data,
+      'syncId': _newSyncId(),
+      'synced': 0,
+    });
     await _trySyncDeclaration(id);
     return id;
   }
@@ -232,14 +265,20 @@ class DatabaseHelper {
         whereArgs: [localId],
       );
       if (list.isNotEmpty) {
-        Map<String, dynamic> decl = list.first;
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null || !user.emailVerified) return;
+        final decl = Map<String, dynamic>.of(list.first);
         try {
-          Map<String, dynamic> dataToSync = Map.of(decl);
+          final dataToSync = Map<String, dynamic>.of(decl);
           dataToSync.remove('id');
+          final syncId = dataToSync.remove('syncId') as String?;
           dataToSync.remove('synced');
+          dataToSync['uid'] = user.uid;
+          if (syncId == null || syncId.isEmpty) return;
           await FirebaseFirestore.instance
               .collection('declarations')
-              .add(dataToSync);
+              .doc('${user.uid}_$syncId')
+              .set(dataToSync, SetOptions(merge: true));
           await db.update(
             'declarations',
             {'synced': 1},
@@ -264,14 +303,20 @@ class DatabaseHelper {
         where: 'synced = ?',
         whereArgs: [0],
       );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || !user.emailVerified) return;
       for (var declaration in unsynceds) {
         try {
-          Map<String, dynamic> dataToSync = Map.of(declaration);
+          final dataToSync = Map<String, dynamic>.of(declaration);
           dataToSync.remove('id');
+          final syncId = dataToSync.remove('syncId') as String?;
           dataToSync.remove('synced');
+          dataToSync['uid'] = user.uid;
+          if (syncId == null || syncId.isEmpty) continue;
           await FirebaseFirestore.instance
               .collection('declarations')
-              .add(dataToSync);
+              .doc('${user.uid}_$syncId')
+              .set(dataToSync, SetOptions(merge: true));
           await db.update(
             'declarations',
             {'synced': 1},

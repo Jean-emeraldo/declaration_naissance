@@ -8,9 +8,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../db/database_helper.dart';
 import '../services/crypto_service.dart';
 import '../services/registration_approval_service.dart';
-import '../services/sync_service.dart';
 import '../utils/translate.dart';
 import '../widgets/registration_approval_dialog.dart';
+import '../widgets/email_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   static const String routeName = '/register';
@@ -120,10 +120,40 @@ class _RegisterScreenState extends State<RegisterScreen>
     var localProfileSaved = false;
     User? firebaseUser;
     try {
-      if (await DatabaseHelper.instance.getUserByEmail(email) != null) {
+      final database = DatabaseHelper.instance;
+      final localUser = await database.getUserByEmail(email);
+      final localProfile = <String, dynamic>{
+        'email': email,
+        'password': await CryptoService.hashPassword(password),
+        'firstName': _controllers['firstName']!.text.trim(),
+        'lastName': _controllers['lastName']!.text.trim(),
+        'profilePicture': _profilePicturePath,
+        'firebaseUid': null,
+        'emailVerified': 0,
+        'synced': 0,
+      };
+      if (localUser != null) {
+        if ((localUser['firebaseUid'] as String?)?.isNotEmpty == true ||
+            !await CryptoService.verifyPassword(
+              password,
+              localUser['password'] as String? ?? '',
+            )) {
+          _snackBar(
+            'Un compte existe déjà avec cette adresse email.',
+            Colors.red.shade400,
+          );
+          return;
+        }
+        await database.updateUser(email, localProfile);
+      } else {
+        await database.insertUser(localProfile);
+      }
+      localProfileSaved = true;
+
+      if (!await database.isOnline) {
         _snackBar(
-          'Un compte existe déjà avec cette adresse email.',
-          Colors.red.shade400,
+          'Profil enregistré sur cet appareil. Reconnectez-vous à Internet puis renvoyez le formulaire pour créer le compte.',
+          Colors.orange,
         );
         return;
       }
@@ -149,6 +179,10 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
       firebaseUser = user;
       firebaseAccountCreated = true;
+
+      if (!user.emailVerified) {
+        await user.sendEmailVerification();
+      }
 
       final approvalStatus = await RegistrationApprovalService()
           .requestApproval(user);
@@ -183,52 +217,13 @@ class _RegisterScreenState extends State<RegisterScreen>
         return;
       }
 
-      await user.reload();
-      if (FirebaseAuth.instance.currentUser?.emailVerified != true) {
-        await _signOutAfterFailure();
-        firebaseAccountCreated = false;
-        _snackBar(
-          'Votre adresse email n’est pas encore vérifiée. Ouvrez le lien reçu puis réessayez.',
-          Colors.orange,
-        );
-        return;
-      }
-
-      final localUser = <String, dynamic>{
-        'email': email,
-        'password': await CryptoService.hashPassword(password),
-        'firstName': _controllers['firstName']!.text.trim(),
-        'lastName': _controllers['lastName']!.text.trim(),
-        'profilePicture': _profilePicturePath,
-        'firebaseUid': user.uid,
-        'synced': 0,
-      };
-      await DatabaseHelper.instance.insertUser(localUser);
-      localProfileSaved = true;
-
-      var profileSynced = false;
-      try {
-        await SyncService().syncUser(localUser);
-        profileSynced = true;
-      } catch (error, stackTrace) {
-        developer.log(
-          'Échec de synchronisation du profil après inscription',
-          name: 'RegisterScreen',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-
-      await FirebaseAuth.instance.signOut();
-      firebaseAccountCreated = false;
       if (!mounted) return;
-      _snackBar(
-        profileSynced
-            ? 'Compte créé. Vous pouvez maintenant vous connecter.'
-            : 'Compte créé, mais le profil n’a pas pu être synchronisé. Il sera réessayé lors de la connexion.',
-        profileSynced ? Colors.green : Colors.orange,
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => EmailVerificationScreen(user: user),
+        ),
       );
-      Navigator.pushReplacementNamed(context, '/auth');
     } on FirebaseAuthException catch (e) {
       if (firebaseAccountCreated) {
         await _signOutAfterFailure();
@@ -242,7 +237,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         'invalid-credential' || 'wrong-password' =>
           'Cette adresse possède déjà un compte. Vérifiez le mot de passe ou connectez-vous.',
         'network-request-failed' =>
-          'Connexion Internet indisponible. Réessayez.',
+          'Connexion Internet indisponible. Le profil reste enregistré localement; réessayez lorsque le réseau sera revenu.',
         _ => e.message ?? 'Erreur Firebase pendant la création du compte.',
       };
       _snackBar(

@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'dart:math';
 import 'crypto_service.dart';
 
 class DatabaseService {
@@ -18,11 +19,12 @@ class DatabaseService {
     final dbPath = await getDatabasesPath();
     return openDatabase(
       join(dbPath, 'declaration_naissance.db'),
-      version: 8,
+      version: 10,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE declarations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            syncId TEXT UNIQUE,
             nom TEXT NOT NULL,
             prenom TEXT,
             dateNaissance TEXT,
@@ -78,6 +80,7 @@ class DatabaseService {
             biometricId TEXT,
             otpCode TEXT,
             firebaseUid TEXT,
+            emailVerified INTEGER NOT NULL DEFAULT 1,
             synced INTEGER NOT NULL DEFAULT 0
           )
         ''');
@@ -194,13 +197,41 @@ class DatabaseService {
             }
           }
         }
+
+        if (oldVersion < 9) {
+          await db.execute(
+            'ALTER TABLE users ADD COLUMN emailVerified INTEGER NOT NULL DEFAULT 1',
+          );
+        }
+
+        if (oldVersion < 10) {
+          await db.execute('ALTER TABLE declarations ADD COLUMN syncId TEXT');
+          await db.execute(
+            "UPDATE declarations SET syncId = lower(hex(randomblob(16))) WHERE syncId IS NULL",
+          );
+          await db.execute(
+            'CREATE UNIQUE INDEX declarations_sync_id ON declarations(syncId)',
+          );
+        }
       },
     );
   }
 
   Future<int> insertDeclaration(Map<String, dynamic> declaration) async {
     final db = await database;
-    return await db.insert('declarations', {...declaration, 'synced': 0});
+    return await db.insert('declarations', {
+      ...declaration,
+      'syncId': _newSyncId(),
+      'synced': 0,
+    });
+  }
+
+  String _newSyncId() {
+    final random = Random.secure();
+    return List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
   }
 
   Future<int> updateDeclaration(
