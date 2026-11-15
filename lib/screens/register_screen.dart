@@ -4,11 +4,14 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../db/database_helper.dart';
 import '../services/crypto_service.dart';
+import '../services/registration_approval_service.dart';
+import '../services/sync_service.dart';
 import '../utils/translate.dart';
-import '../widgets/email_verification_screen.dart';
+import '../widgets/registration_approval_dialog.dart';
 
 class RegisterScreen extends StatefulWidget {
   static const String routeName = '/register';
@@ -174,17 +177,77 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
       firebaseAccountCreated = true;
 
-      if (!user.emailVerified) {
-        await user.sendEmailVerification();
+      var approvalStatus = await RegistrationApprovalService().requestApproval(
+        user,
+      );
+      if (approvalStatus == RegistrationApprovalStatus.pending) {
+        if (!mounted) {
+          await _signOutAfterFailure();
+          firebaseAccountCreated = false;
+          return;
+        }
+        approvalStatus =
+            await showDialog<RegistrationApprovalStatus>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => RegistrationApprovalDialog(user: user),
+            ) ??
+            RegistrationApprovalStatus.pending;
       }
 
+      if (approvalStatus != RegistrationApprovalStatus.approved) {
+        await _signOutAfterFailure();
+        firebaseAccountCreated = false;
+        if (mounted &&
+            (approvalStatus == RegistrationApprovalStatus.rejected ||
+                approvalStatus == RegistrationApprovalStatus.expired)) {
+          _snackBar(
+            approvalStatus == RegistrationApprovalStatus.rejected
+                ? 'Inscription refusée. Le compte a été annulé.'
+                : 'La demande a expiré. Recommencez l’inscription.',
+            Colors.orange,
+          );
+        }
+        return;
+      }
+
+      await user.reload();
+      final verifiedUser = FirebaseAuth.instance.currentUser;
+      if (verifiedUser?.emailVerified != true) {
+        throw StateError(
+          'Firebase n’a pas confirmé le compte après l’approbation.',
+        );
+      }
+
+      final verifiedProfile = {
+        ...localProfile,
+        'firebaseUid': verifiedUser!.uid,
+        'emailVerified': 1,
+        'synced': 0,
+      };
+      await database.updateUser(email, verifiedProfile);
+      var profileSynced = false;
+      try {
+        await SyncService().syncUser(verifiedProfile);
+        profileSynced = true;
+      } catch (error, stackTrace) {
+        developer.log(
+          'Échec de synchronisation du profil après approbation',
+          name: 'RegisterScreen',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+
+      await const FlutterSecureStorage().write(key: 'user_email', value: email);
       if (!mounted) return;
-      await Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => EmailVerificationScreen(user: user),
-        ),
+      _snackBar(
+        profileSynced
+            ? 'Inscription confirmée. Bienvenue !'
+            : 'Inscription confirmée. La synchronisation reprendra lorsque le réseau sera disponible.',
+        profileSynced ? Colors.green : Colors.orange,
       );
+      Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (_) => false);
     } on FirebaseAuthException catch (e) {
       if (firebaseAccountCreated) {
         await _signOutAfterFailure();
@@ -207,6 +270,9 @@ class _RegisterScreenState extends State<RegisterScreen>
             : message,
         Colors.red.shade400,
       );
+    } on RegistrationApprovalException catch (error) {
+      if (firebaseAccountCreated) await _signOutAfterFailure();
+      _snackBar(error.message, Colors.red.shade400);
     } catch (e) {
       if (firebaseAccountCreated) {
         await _signOutAfterFailure();
